@@ -13,7 +13,6 @@ import sqlalchemy
 import passlib.context
 import passlib.hash
 import passlib.registry
-import time
 import logging
 import os
 import smtplib
@@ -26,6 +25,7 @@ from sqlalchemy.ext import declarative
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy import event
 from werkzeug.utils import cached_property
 
 from mailu import dkim, utils
@@ -195,6 +195,8 @@ class Domain(Base):
     max_aliases = db.Column(db.Integer, nullable=False, default=-1)
     max_quota_bytes = db.Column(db.BigInteger, nullable=False, default=0)
     signup_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    # Anonymous Email Service integration: enable domain to accept API-generated aliases
+    anonmail_enabled = db.Column(db.Boolean, nullable=False, default=False)
 
     _dkim_key = None
     _dkim_key_on_disk = None
@@ -221,20 +223,20 @@ class Domain(Base):
     def dns_mx(self):
         """ return MX record for domain """
         hostname = app.config['HOSTNAME']
-        return f'{self.name}. 600 IN MX 10 {hostname}.'
+        return f'{idna.encode(self.name.lower()).decode('ascii')}. 600 IN MX 10 {idna.encode(hostname.lower()).decode('ascii')}.'
 
     @cached_property
     def dns_spf(self):
         """ return SPF record for domain """
         hostname = app.config['HOSTNAME']
-        return f'{self.name}. 600 IN TXT "v=spf1 mx a:{hostname} ~all"'
+        return f'{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=spf1 mx a:{idna.encode(hostname.lower()).decode('ascii')} ~all"'
 
     @property
     def dns_dkim(self):
         """ return DKIM record for domain """
         if self.dkim_key:
             selector = app.config['DKIM_SELECTOR']
-            return f'{selector}._domainkey.{self.name}. 600 IN TXT "v=DKIM1; k=rsa; p={self.dkim_publickey}"'
+            return f'{selector}._domainkey.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=DKIM1; k=rsa; p={self.dkim_publickey}"'
 
     @cached_property
     def dns_dmarc(self):
@@ -242,17 +244,22 @@ class Domain(Base):
         if self.dkim_key:
             domain = app.config['DOMAIN']
             rua = app.config['DMARC_RUA']
-            rua = f' rua=mailto:{rua}@{domain};' if rua else ''
+            rua = f' rua=mailto:{rua}@{idna.encode(domain.lower()).decode('ascii')};' if rua else ''
             ruf = app.config['DMARC_RUF']
-            ruf = f' ruf=mailto:{ruf}@{domain};' if ruf else ''
-            return f'_dmarc.{self.name}. 600 IN TXT "v=DMARC1; p=reject;{rua}{ruf} adkim=s; aspf=s"'
+            ruf = f' ruf=mailto:{ruf}@{idna.encode(domain.lower()).decode('ascii')};' if ruf else ''
+            return f'_dmarc.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=DMARC1; p=reject;{rua}{ruf} adkim=s; aspf=s"'
+
+    @cached_property
+    def dns_dmarc_report_needed(self):
+        """ return true if DMARC report record is needed """
+        return self.name != app.config['DOMAIN']
 
     @cached_property
     def dns_dmarc_report(self):
         """ return DMARC report record for mailu server """
         if self.dkim_key:
             domain = app.config['DOMAIN']
-            return f'{self.name}._report._dmarc.{domain}. 600 IN TXT "v=DMARC1;"'
+            return f'{idna.encode(self.name.lower()).decode('ascii')}._report._dmarc.{idna.encode(domain.lower()).decode('ascii')}. 600 IN TXT "v=DMARC1;"'
 
     @cached_property
     def dns_autoconfig(self):
@@ -273,10 +280,10 @@ class Domain(Base):
             ])
 
         return [
-            f'_{proto}._tcp.{self.name}. 600 IN SRV {prio} 1 {port} {hostname}.' if port in ports else f'_{proto}._tcp.{self.name}. 600 IN SRV 0 0 0 .'
+            f'_{proto}._tcp.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN SRV {prio} 1 {port} {hostname}.' if port in ports else f'_{proto}._tcp.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN SRV 0 0 0 .'
             for proto, port, prio
             in protocols
-        ]+[f'autoconfig.{self.name}. 600 IN CNAME {hostname}.', f'autodiscover.{self.name}. 600 IN CNAME {hostname}.']
+        ]+[f'autoconfig.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN CNAME {idna.encode(hostname.lower()).decode('ascii')}.', f'autodiscover.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN CNAME {idna.encode(hostname.lower()).decode('ascii')}.']
 
     @cached_property
     def dns_tlsa(self):
@@ -285,9 +292,9 @@ class Domain(Base):
         if app.config['TLS_FLAVOR'] in ('letsencrypt', 'mail-letsencrypt'):
             return [
                 # current ISRG Root X1 (RSA 4096, O = Internet Security Research Group, CN = ISRG Root X1) @20210902
-                f'_25._tcp.{hostname}. 86400 IN TLSA 2 1 1 0b9fa5a59eed715c26c1020c711b4f6ec42d58b0015e14337a39dad301c5afc3',
+                f'_25._tcp.{idna.encode(hostname.lower()).decode('ascii')}. 86400 IN TLSA 2 1 1 0b9fa5a59eed715c26c1020c711b4f6ec42d58b0015e14337a39dad301c5afc3',
                 # current ISRG Root X2 (ECDSA P-384, O = Internet Security Research Group, CN = ISRG Root X2) @20240311
-                f'_25._tcp.{hostname}. 86400 IN TLSA 2 1 1 762195c225586ee6c0237456e2107dc54f1efc21f61a792ebd515913cce68332',
+                f'_25._tcp.{idna.encode(hostname.lower()).decode('ascii')}. 86400 IN TLSA 2 1 1 762195c225586ee6c0237456e2107dc54f1efc21f61a792ebd515913cce68332',
             ]
         return []
 
@@ -360,7 +367,7 @@ class Alternative(Base):
         """ return DKIM record for domain """
         if self.domain.dkim_key:
             selector = app.config['DKIM_SELECTOR']
-            return f'{selector}._domainkey.{self.name}. 600 IN TXT "v=DKIM1; k=rsa; p={self.domain.dkim_publickey}"'
+            return f'{selector}._domainkey.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=DKIM1; k=rsa; p={self.domain.dkim_publickey}"'
 
     @cached_property
     def dns_dmarc(self):
@@ -368,29 +375,34 @@ class Alternative(Base):
         if self.domain.dkim_key:
             domain = app.config['DOMAIN']
             rua = app.config['DMARC_RUA']
-            rua = f' rua=mailto:{rua}@{domain};' if rua else ''
+            rua = f' rua=mailto:{rua}@{idna.encode(domain.lower()).decode('ascii')};' if rua else ''
             ruf = app.config['DMARC_RUF']
-            ruf = f' ruf=mailto:{ruf}@{domain};' if ruf else ''
-            return f'_dmarc.{self.name}. 600 IN TXT "v=DMARC1; p=reject;{rua}{ruf} adkim=s; aspf=s"'
+            ruf = f' ruf=mailto:{ruf}@{idna.encode(domain.lower()).decode('ascii')};' if ruf else ''
+            return f'_dmarc.{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=DMARC1; p=reject;{rua}{ruf} adkim=s; aspf=s"'
+
+    @cached_property
+    def dns_dmarc_report_needed(self):
+        """ return true if DMARC report record is needed """
+        return self.name != app.config['DOMAIN']
 
     @cached_property
     def dns_dmarc_report(self):
         """ return DMARC report record for mailu server """
         if self.domain.dkim_key:
             domain = app.config['DOMAIN']
-            return f'{self.name}._report._dmarc.{domain}. 600 IN TXT "v=DMARC1;"'
+            return f'{idna.encode(self.name.lower()).decode('ascii')}._report._dmarc.{idna.encode(domain.lower()).decode('ascii')}. 600 IN TXT "v=DMARC1;"'
 
     @cached_property
     def dns_mx(self):
         """ return MX record for domain """
         hostname = app.config['HOSTNAME']
-        return f'{self.name}. 600 IN MX 10 {hostname}.'
+        return f'{idna.encode(self.name.lower()).decode('ascii')}. 600 IN MX 10 {idna.encode(hostname.lower()).decode('ascii')}.'
 
     @cached_property
     def dns_spf(self):
         """ return SPF record for domain """
         hostname = app.config['HOSTNAME']
-        return f'{self.name}. 600 IN TXT "v=spf1 mx a:{hostname} ~all"'
+        return f'{idna.encode(self.name.lower()).decode('ascii')}. 600 IN TXT "v=spf1 mx a:{idna.encode(hostname.lower()).decode('ascii')} ~all"'
 
     def check_mx(self):
         """ checks if MX record for domain points to mailu host """
@@ -732,12 +744,32 @@ class Alias(Base, Email):
     wildcard = db.Column(db.Boolean, nullable=False, default=False)
     destination = db.Column(CommaSeparatedList, nullable=False, default=list)
 
+    # Anonymous Email Service metadata
+    hostname = db.Column(db.String(255), nullable=True)
+    owner_email = db.Column(db.String(255), db.ForeignKey('user.email'), nullable=True)
+    owner = db.relationship('User', backref=db.backref('owned_aliases', cascade='all, delete-orphan'))
+    disabled = db.Column(db.Boolean, nullable=False, default=False)
+
     @classmethod
     def resolve(cls, localpart, domain_name):
         """ find aliases matching email address localpart@domain_name """
 
+        # An alias is active if it is not explicitly disabled AND its owner
+        # (if any) is enabled. These two flags are independent: disabling the
+        # owner suspends delivery without touching alias.disabled, so
+        # re-enabling the owner restores delivery automatically.
+        owner_enabled = sqlalchemy.or_(
+            cls.owner_email == None,
+            sqlalchemy.exists().where(
+                sqlalchemy.and_(
+                    User.email == cls.owner_email,
+                    User.enabled == True
+                )
+            )
+        )
+
         alias_preserve_case = cls.query.filter(
-                sqlalchemy.and_(cls.domain_name == domain_name,
+                sqlalchemy.and_(cls.domain_name == domain_name, cls.disabled == False, owner_enabled,
                     sqlalchemy.or_(
                         sqlalchemy.and_(
                             cls.wildcard == False,
@@ -752,7 +784,7 @@ class Alias(Base, Email):
 
         localpart_lower = localpart.lower() if localpart else None
         alias_lower_case = cls.query.filter(
-                sqlalchemy.and_(cls.domain_name == domain_name,
+                sqlalchemy.and_(cls.domain_name == domain_name, cls.disabled == False, owner_enabled,
                     sqlalchemy.or_(
                         sqlalchemy.and_(
                             cls.wildcard == False,
@@ -777,6 +809,9 @@ class Alias(Base, Email):
             return alias_lower_case
 
         return None
+
+
+# end of Alias class helpers
 
 
 class Token(Base):
@@ -835,6 +870,7 @@ class Fetch(Base):
     password = db.Column(db.String(255), nullable=False)
     keep = db.Column(db.Boolean, nullable=False, default=False)
     scan = db.Column(db.Boolean, nullable=False, default=False)
+    invisible = db.Column(db.Boolean, nullable=False, default=False)
     folders = db.Column(CommaSeparatedList, nullable=True, default=list)
     last_check = db.Column(db.DateTime, nullable=True)
     error = db.Column(db.String(1023), nullable=True)
@@ -851,6 +887,46 @@ managers = db.Table('manager', Base.metadata,
     db.Column('domain_name', IdnaDomain, db.ForeignKey(Domain.name)),
     db.Column('user_email', IdnaEmail, db.ForeignKey(User.email))
 )
+
+
+class DomainAccess(Base):
+    """Per-user access grant to use Anonymous Email Service API for a domain"""
+
+    __tablename__ = 'domain_access'
+    __table_args__ = (
+        db.UniqueConstraint('domain_name', 'user_email', name='uq_domain_access_user'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    domain_name = db.Column(IdnaDomain, db.ForeignKey(Domain.name), nullable=False)
+    domain = db.relationship(Domain, backref=db.backref('domain_accesses', cascade='all, delete-orphan'))
+    user_email = db.Column(IdnaEmail, db.ForeignKey(User.email), nullable=True)
+    user = db.relationship(User, backref=db.backref('domain_accesses', cascade='all, delete-orphan'), foreign_keys=[user_email])
+
+    def __repr__(self):
+        return f'<DomainAccess {self.domain_name} for {self.user_email}>'
+
+
+def has_domain_access(domain_name, user=None):
+    """Return True if the given user has access to domain_name.
+    Administrators implicitly have access to all domains.
+    """
+    if user is not None and getattr(user, 'global_admin', False):
+        return True
+    
+    if user is not None:
+        domain = Domain.query.get(domain_name)
+        if domain and domain.managers.filter_by(email=user.email).first():
+            return True
+
+    if user is None:
+        return False
+
+    query = DomainAccess.query.filter(
+        DomainAccess.domain_name == domain_name,
+        DomainAccess.user_email == user.email
+    )
+    return db.session.query(query.exists()).scalar()
 
 
 class MailuConfig:

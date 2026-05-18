@@ -22,6 +22,7 @@ gunicorn
 idna
 itsdangerous
 limits
+mariadb
 marshmallow
 marshmallow-sqlalchemy
 mysql-connector-python
@@ -34,8 +35,10 @@ SQLAlchemy
 srslib
 tabulate
 tenacity
+tld
 validators
 Werkzeug
+wonderwords
 WTForms
 WTForms-Components
 xmltodict
@@ -45,6 +48,7 @@ watchdog
 
 # core/postfix
 postfix-mta-sts-resolver
+uvloop
 
 # core/oletools
 python-magic
@@ -55,4 +59,3 @@ requests
 
 # optional/radicale
 radicale
-

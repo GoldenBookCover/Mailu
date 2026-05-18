@@ -1113,6 +1113,9 @@ class DomainSchema(BaseSchema):
         include_relationships = True
         exclude = ['users', 'managers', 'aliases']
 
+        # Anonymous Email Service domain flags
+        anonmail_enabled = fields.Boolean(load_default=False, dump_default=False)
+
         include_by_context = {
             ('dns',): {'dkim_publickey', 'dns_mx', 'dns_spf', 'dns_dkim', 'dns_dmarc'},
         }
@@ -1148,7 +1151,7 @@ class TokenSchema(BaseSchema):
         sibling = True
 
     password = PasswordField(required=True, metadata={'model': models.User})
-    hash_password = fields.Boolean(load_only=True, missing=False)
+    hash_password = fields.Boolean(load_only=True, load_default=False)
 
 
 @mapped
@@ -1193,7 +1196,7 @@ class UserSchema(BaseSchema):
     fetches = fields.Nested(FetchSchema, many=True)
 
     password = PasswordField(required=True, metadata={'model': models.User})
-    hash_password = fields.Boolean(load_only=True, missing=False)
+    hash_password = fields.Boolean(load_only=True, load_default=False)
 
 
 @mapped
@@ -1212,6 +1215,12 @@ class AliasSchema(BaseSchema):
 
     email = fields.String(required=True)
     destination = CommaSeparatedListField()
+
+    # Anonymous Email Service metadata
+    note = fields.String(allow_none=True)
+    hostname = fields.String(allow_none=True)
+    owner_email = fields.String(allow_none=True, dump_only=True)
+    disabled = fields.Boolean(load_default=False, dump_default=False)
 
 
 @mapped

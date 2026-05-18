@@ -54,6 +54,9 @@ function hibpCheck(pwd) {
 // TODO: conditionally (or lazy) load select2 and dataTable
 $('document').ready(function() {
 
+    // select content of autofocused field (if any)
+    $(document.activeElement).filter('input,textarea').first().select();
+
     // intercept anchors with data-clicked attribute and open alternate location instead
     $('[data-clicked]').click(function(e) {
         e.preventDefault();
@@ -76,7 +79,7 @@ $('document').ready(function() {
         var fieldset = $(this).parents('fieldset');
         if (this.checked) {
             fieldset.removeAttr('disabled');
-            fieldset.find('input,textarea').not(this).removeAttr('disabled');
+            fieldset.find('input,textarea').not(this).removeAttr('disabled').first().focus();
         } else {
             fieldset.attr('disabled', '');
             fieldset.find('input,textarea').not(this).attr('disabled', '');
@@ -111,6 +114,8 @@ $('document').ready(function() {
     var d = $(document.documentElement);
     $('.dataTable').DataTable({
         'responsive': true,
+        'stateSave': true,
+        'lengthMenu': [[10, 25, 50, 75, 100, -1], [10, 25, 50, 75, 100, '∞']],
         language: {
             url: d.data('static') + d.attr('lang') + '.json',
         },
