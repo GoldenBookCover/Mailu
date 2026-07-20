@@ -114,7 +114,7 @@ else:
         exit(5)
 
 # Configure nginx
-conf.jinja("/conf/nginx-webmail.conf", context, "/etc/nginx/http.d/webmail.conf")
+conf.jinja("/conf/nginx-webmail.conf", context, "/etc/nginx/conf.d/webmail.conf")
 if os.path.exists("/var/run/nginx.pid"):
     os.system("nginx -s reload")
 

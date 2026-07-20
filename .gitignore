@@ -18,3 +18,4 @@ pip-selfcheck.json
 /.vscode
 qemu-arm-static
 /build/
+/app/

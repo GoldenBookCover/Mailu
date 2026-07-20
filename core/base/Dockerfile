@@ -76,6 +76,17 @@ FROM system
 COPY --from=build /app/venv/ /app/venv/
 COPY --chown=root:root --from=build /app/snuffleupagus.so /usr/lib/php83/modules/
 
+# Patch for CVE-2026-42945, install nginx 1.30.4 or above
+RUN apk add openssl curl ca-certificates \
+    && printf "%s%s%s%s\n" \
+    "@nginx " \
+    "https://nginx.org/packages/alpine/v" \
+    `egrep -o '^[0-9]+\.[0-9]+' /etc/alpine-release` \
+    "/main" \
+    | tee -a /etc/apk/repositories \
+    && curl -o /etc/apk/keys/nginx_signing.rsa.pub https://nginx.org/keys/nginx_signing.rsa.pub \
+    && apk update
+
 ENV \
   VIRTUAL_ENV=/app/venv \
   PATH="/app/venv/bin:${PATH}" \
