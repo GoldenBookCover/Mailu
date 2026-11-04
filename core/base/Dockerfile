@@ -52,7 +52,7 @@ ENV \
   SNUFFLEUPAGUS_URL="https://github.com/jvoisin/snuffleupagus/archive/refs/tags/v${SNUFFLEUPAGUS_VERSION}.tar.gz"
 
 RUN set -euxo pipefail \
-  ;  machine="$(apk --print-arch)" \
+  ;  machine="$(uname -m)" \
   ; deps="build-base gcc libffi-dev python3-dev mariadb-dev" \
   ; [[ "${machine}" != x86_64 ]] && \
       deps="${deps} rust cargo git libretls-dev mariadb-connector-c-dev postgresql-dev" \

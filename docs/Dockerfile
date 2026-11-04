@@ -25,7 +25,7 @@ RUN set -euxo pipefail \
 
 
 # Build nginx deployment image including generated html
-FROM nginx:1.30.4-alpine
+FROM nginx:1.30.6-alpine
 
 ARG version=master
 ARG pinned_version=master

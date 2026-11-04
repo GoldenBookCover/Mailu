@@ -12,12 +12,15 @@ COPY roundcube/roundcube.diff /tmp/roundcube.diff
 # php83-pecl-imagick php83-pecl-uuid are missing
 RUN set -euxo pipefail \
   ; apk add --no-cache \
-    nginx@nginx gpg gpg-agent patch \
-    php83 php83-fpm php83-mbstring php83-zip php83-xml php83-simplexml php83-pecl-apcu \
-    php83-dom php83-curl php83-exif gd php83-gd php83-iconv php83-intl php83-openssl php83-ctype \
-    php83-pdo_sqlite php83-pdo_mysql php83-pdo_pgsql php83-pdo php83-sodium libsodium php83-tidy \
-    php83-pspell php83-opcache php83-session php83-sockets php83-fileinfo php83-xmlreader php83-xmlwriter \
+    nginx@nginx gpg gpg-agent patch gd libsodium \
     aspell-uk aspell-ru aspell-fr aspell-de aspell-en \
+  ; apk add --no-cache \
+    --repository=http://dl-cdn.alpinelinux.org/alpine/v3.21/main \
+    --repository=http://dl-cdn.alpinelinux.org/alpine/v3.21/community \
+    'php83>=8.3.36-r0' php83-fpm php83-mbstring php83-zip php83-xml php83-simplexml php83-pecl-apcu \
+    php83-dom php83-curl php83-exif php83-gd php83-iconv php83-intl php83-openssl php83-ctype \
+    php83-pdo_sqlite php83-pdo_mysql php83-pdo_pgsql php83-pdo php83-sodium php83-tidy \
+    php83-pspell php83-opcache php83-session php83-sockets php83-fileinfo php83-xmlreader php83-xmlwriter \
   ; rm /etc/nginx/conf.d/default.conf \
   ; rm /etc/php83/php-fpm.d/www.conf \
   ; mkdir -m 700 /root/.gnupg/ \
@@ -27,9 +30,8 @@ RUN set -euxo pipefail \
   ; rm -f /tmp/roundcube.asc /tmp/snappymail.asc \
   ; mkdir -p /run/nginx /conf
 
-# roundcube
-ENV ROUNDCUBE_URL https://github.com/roundcube/roundcubemail/releases/download/1.6.15/roundcubemail-1.6.15-complete.tar.gz
-ENV CARDDAV_URL https://github.com/mstilkerich/rcmcarddav/releases/download/v5.1.2/carddav-v5.1.2.tar.gz
+ENV ROUNDCUBE_URL=https://github.com/roundcube/roundcubemail/releases/download/1.6.20/roundcubemail-1.6.20-complete.tar.gz
+ENV CARDDAV_URL=https://github.com/mstilkerich/rcmcarddav/releases/download/v5.1.3/carddav-v5.1.3.tar.gz
 
 RUN set -euxo pipefail \
   ; mkdir -p /var/www \
@@ -55,7 +57,7 @@ COPY roundcube/config/config.inc.carddav.php /var/www/roundcube/plugins/carddav/
 
 # snappymail
 
-ENV SNAPPYMAIL_URL https://github.com/the-djmaze/snappymail/releases/download/v2.38.2/snappymail-2.38.2.tar.gz
+ENV SNAPPYMAIL_URL=https://github.com/the-djmaze/snappymail/releases/download/v2.38.2/snappymail-2.38.2.tar.gz
 
 RUN set -euxo pipefail \
   ; mkdir  /var/www/snappymail \
